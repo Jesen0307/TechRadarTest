@@ -2,8 +2,8 @@
 """
 Ambil component dari Dependency-Track, kelompokkan menjadi teknologi, lalu hasilkan:
 
-    radar.json     blip format Thoughtworks BYOR (hanya teknologi yang ada di mapping)
-    unmapped.json  teknologi yang belum punya quadrant/ring, beserta data pendukung
+    radar.json      blip format Thoughtworks BYOR (hanya teknologi yang ada di mapping)
+    unmapped.json   teknologi yang belum punya quadrant/ring, beserta data pendukung
 
 Keputusan quadrant dan ring dibaca dari mapping.json:
 
