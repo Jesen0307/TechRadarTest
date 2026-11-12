@@ -112,7 +112,6 @@ Susun dari proposals.json yang baru kamu tulis, jangan menganalisis ulang dan ja
 **Perlu keputusan manusia:** satu bullet per hal
 
 Jangan mengubah berkas lain.''',
-                                rawLogPath: "ai-logs/${env.BUILD_NUMBER}-proposals.jsonl",
                                 yoloMode: true
                     }
                 }
@@ -160,7 +159,7 @@ Jangan mengubah berkas lain.''',
 
     post {
         always {
-            archiveArtifacts artifacts: 'radar.json, unmapped.json, proposals.json, mapping.json, ai-logs/*.jsonl, dump/**', allowEmptyArchive: true
+            archiveArtifacts artifacts: 'radar.json, unmapped.json, proposals.json, mapping.json, dump/**', allowEmptyArchive: true
         }
     }
 }
