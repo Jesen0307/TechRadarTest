@@ -11,12 +11,11 @@ pipeline {
     }
 
     parameters {
-        string(name: 'DT_URL', defaultValue: 'http://localhost:8082', description: 'URL API server Dependency-Track')
+        string(name: 'DT_URL', defaultValue: 'http://dependency-track-apiserver-1:8080', description: 'URL API server Dependency-Track')
         string(name: 'TAG', defaultValue: '', description: 'Opsional: hanya project dengan tag ini')
         string(name: 'EXCLUDE_TYPES', defaultValue: 'golang', description: 'Jenis purl yang difilter selain paket OS, dipisah spasi')
         booleanParam(name: 'RUN_AGENT', defaultValue: true, description: 'Jalankan AI agent. Matikan untuk menguji pipeline tanpa agent')
         booleanParam(name: 'DUMP_RAW', defaultValue: false, description: 'Simpan juga data mentah semua project')
-        booleanParam(name: 'INCLUDE_LOW_CONFIDENCE', defaultValue: false, description: 'Gabungkan juga usulan berkeyakinan rendah ke mapping')
     }
 
     stages {
@@ -74,7 +73,7 @@ pipeline {
             }
         }
 
-        stage('Bangun radar dari mapping saat ini') {
+        stage('Tarik data unmapped dari Dependency-Track') {
             steps {
                 withCredentials([string(credentialsId: 'dtrack-api-key', variable: 'DT_KEY')]) {
                     sh 'python3 dtrack_to_radar.py --url "$DT_URL" --mapping mapping.json --out radar.json --unmapped unmapped.json $RADAR_ARGS'
@@ -98,68 +97,34 @@ pipeline {
                                 apiCredentialsId: 'OpenCode',
                                 failOnAgentError: false,
                                 model: 'opencode/deepseek-v4.1-flash-free',
-                                prompt: '''Baca radar-playbook.md dan ikuti persis.
-Input: unmapped.json dan mapping.json.
-
-Langkah 1: tulis usulanmu ke proposals.json memakai format di playbook.
-Berkas harus berisi hanya JSON array yang valid, tanpa markdown, tanpa code fence, dan tanpa teks sebelum atau sesudahnya.
-
-Langkah 2: setelah berkas tertulis, balasan akhirmu berupa ringkasan singkat yang bisa dibaca manusia.
-Susun dari proposals.json yang baru kamu tulis, jangan menganalisis ulang dan jangan menempel JSON. Pakai layout ini:
-## Usulan Tech Radar
-**Jumlah usulan:** angka
-**Keyakinan rendah:** nama teknologi dipisah koma
-**Perlu keputusan manusia:** satu bullet per hal
-
-Jangan mengubah berkas lain.''',
+                                prompt: '''Baca unmapped.json. Berdasarkan data tersebut, berikan usulan quadrant, ring, keyakinan, dan alasan untuk setiap teknologi.
+Tulis hasilnya ke proposals.json dalam format array JSON persis seperti ini:
+[
+  {
+    "name": "Nama Teknologi",
+    "quadrant": "Languages & Frameworks",
+    "ring": "Adopt",
+    "alasan": "Alasan singkat penempatan.",
+    "yakin": "tinggi"
+  }
+]
+Berkas harus berisi hanya JSON array yang valid, tanpa markdown, tanpa code fence, dan tanpa teks sebelum atau sesudahnya.''',
                                 yoloMode: true
                     }
                 }
             }
         }
 
-        stage('Validasi usulan') {
-            when { expression { env.UNMAPPED_COUNT != '0' && fileExists('proposals.json') } }
+        stage('Buat radar final dari AI') {
             steps {
-                script {
-                    def rc = sh(
-                        script: 'python3 validate_proposals.py proposals.json --unmapped unmapped.json --mapping mapping.json',
-                        returnStatus: true
-                    )
-                    env.PROPOSALS_OK = (rc == 0) ? 'true' : 'false'
-                    if (rc != 0) {
-                        unstable('Validasi usulan gagal, usulan tidak diterapkan')
-                    }
-                }
-            }
-        }
-
-        stage('Persetujuan manusia') {
-            when { expression { env.PROPOSALS_OK == 'true' } }
-            steps {
-                timeout(time: 2, unit: 'DAYS') {
-                    input message: 'Setujui usulan quadrant dan ring (lihat artifact proposals.json) untuk digabung ke mapping?', ok: 'Setujui'
-                }
-            }
-        }
-
-        stage('Terapkan usulan dan bangun radar final') {
-            when { expression { env.PROPOSALS_OK == 'true' } }
-            steps {
-                script {
-                    def low = params.INCLUDE_LOW_CONFIDENCE ? '--include-low' : ''
-                    sh "python3 validate_proposals.py proposals.json --unmapped unmapped.json --mapping mapping.json --merge ${low}"
-                }
-                withCredentials([string(credentialsId: 'dtrack-api-key', variable: 'DT_KEY')]) {
-                    sh 'python3 dtrack_to_radar.py --url "$DT_URL" --mapping mapping.json --out radar.json --unmapped unmapped.json $RADAR_ARGS'
-                }
+                sh 'python3 proposals_to_radar.py'
             }
         }
     }
 
     post {
         always {
-            archiveArtifacts artifacts: 'radar.json, unmapped.json, proposals.json, mapping.json, dump/**', allowEmptyArchive: true
+            archiveArtifacts artifacts: 'radar.json, unmapped.json, proposals.json, dump/**', allowEmptyArchive: true
         }
     }
 }
